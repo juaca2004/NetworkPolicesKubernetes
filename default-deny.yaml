@@ -1,0 +1,13 @@
+# default-deny.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: web # Aplicar también en 'app' y 'data'
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: [] # Niega todo Ingress
+  egress: []  # Niega todo Egress
