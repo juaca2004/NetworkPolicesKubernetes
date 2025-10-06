@@ -1,13 +1,41 @@
-# default-deny.yaml
+# default-deny.yaml (CORRECTO)
+# Contiene tres NetworkPolicies, una por cada Namespace: web, app, data.
+
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: default-deny-all
-  namespace: web # Aplicar también en 'app' y 'data'
+  name: default-deny-all-web
+  namespace: web
 spec:
-  podSelector: {}
+  podSelector: {} 
   policyTypes:
   - Ingress
   - Egress
   ingress: [] # Niega todo Ingress
   egress: []  # Niega todo Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-app
+  namespace: app
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-data
+  namespace: data
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
