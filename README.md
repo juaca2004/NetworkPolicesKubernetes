@@ -1,73 +1,366 @@
-# NetworkPolicesKubernetes
+#Seguridad por Capas con NetworkPolicies
 
-Claro. Aquí tienes el documento `README.md` completamente actualizado con la arquitectura alternativa, los scripts de PowerShell corregidos (sin tildes ni 'ñ') y los procedimientos de prueba detallados.
+Este documento detalla la creacion de una arquitectura de microservicios de tres capas en Kubernetes, donde la seguridad es impuesta usando **NetworkPolicies** bajo el principio de **Minimo Privilegio**.
 
------
+## 1\. Configuracion Inicial y Creacion de Archivos YAML
 
-# README: Implementacion de Seguridad por Capas con NetworkPolicies en Kubernetes
+### 1.1. Creacion de Namespaces, Despliegues y Servicios (`deployments.yaml`)
 
-## Descripcion
+Se crea los diferentes archivos `.yaml` con la arquitectura de la aplicacion: `web` (Frontend), `app` (Backend) y `data` (DB).
 
-El objetivo de este proyecto es demostrar la implementacion de un **modelo de seguridad por capas** (defense-in-depth) en una aplicacion de tres niveles (Web, Aplicacion, Datos) desplegada en Kubernetes. Para ello, se utilizan **NetworkPolicies** para asegurar el **Minimo Privilegio** en la comunicacion de red.
-
-Cada capa reside en su propio Namespace, garantizando que el trafico solo fluya en la direccion permitida: **Web $\rightarrow$ Aplicacion $\rightarrow$ Datos**.
-
------
-
-## 1\. Arquitectura de la Aplicacion
-
-La aplicacion se distribuye en tres Namespaces aislados logicamente. La comunicacion se basa en la etiqueta de pod **`tier`**.
-
-| Capa | Namespace | Etiqueta de Pod | Puerto de Comunicacion | Servicio | Acceso Externo |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Web (Frontend)** | `web` | `tier: frontend` | 80 | Nginx | `NodePort` |
-| **Aplicacion (Backend)** | `app` | `tier: backend` | 8080 | BusyBox (simulado) | `ClusterIP` |
-| **Datos (DB)** | `data` | `tier: database` | 5432 | PostgreSQL | `ClusterIP` |
-
------
-
-## 2\. Estrategia de NetworkPolicies
-
-Se aplica una estrategia de **Denegar por Defecto** a todos los pods de todos los Namespaces. Posteriormente, se definen las siguientes reglas explicitas:
-
-| Namespace | Tipo de Regla | Origen/Destino Permitido | Puerto | Proposito |
-| :--- | :--- | :--- | :--- | :--- |
-| `web` | Ingress | `0.0.0.0/0` (Internet) | 80 | Permite acceso externo. |
-| `web` | Egress | `app` (tier: backend) | 8080 | Permite comunicacion al Backend. |
-| `app` | Ingress | `web` (tier: frontend) | 8080 | Acepta trafico solo del Frontend. |
-| `app` | Egress | `data` (tier: database) | 5432 | Permite comunicacion a la Base de Datos. |
-| `data` | Ingress | `app` (tier: backend) | 5432 | Acepta trafico solo del Backend. |
-| `data` | Egress | **Ninguno** (`egress: []` explicito) | - | Bloquea toda salida de la DB para maxima seguridad. |
-
------
-
-## 3\. Implementacion y Pruebas (PowerShell)
-
-### 3.1. Proceso de Implementacion
-
-Se asume que los archivos YAML de Namespaces, Despliegues, Servicios y NetworkPolicies (separados en `default-deny.yaml` y `network-policies.yaml`) estan presentes. El siguiente script se utiliza para aplicar toda la configuracion:
-
-```powershell
-# apply-all.ps1 - Comandos clave
-
-# Aplicar Namespaces y Despliegues
-kubectl apply -f namespaces.yaml,deployments.yaml
-
-# Esperar a que los pods esten listos (importante antes de las pruebas)
-kubectl wait --for=condition=Ready pod -l tier=frontend -n web --timeout=90s
-kubectl wait --for=condition=Ready pod -l tier=backend -n app --timeout=90s
-kubectl wait --for=condition=Ready pod -l tier=database -n data --timeout=90s
-
-# Aplicar Politicas de Seguridad
-kubectl apply -f default-deny.yaml
-kubectl apply -f network-policies.yaml
+```yaml
+# deployments.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data
+---
+# Despliegue y Servicio Web (Frontend)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-dep
+  namespace: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        tier: frontend
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: web
+spec:
+  selector:
+    tier: frontend
+  ports:
+  - port: 80
+    targetPort: 80
+  type: NodePort
+---
+# Despliegue y Servicio Aplicacion (Backend)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-dep
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      tier: backend
+  template:
+    metadata:
+      labels:
+        tier: backend
+    spec:
+      containers:
+      - name: backend
+        # Simula un servidor escuchando en el puerto 8080
+        image: busybox
+        command: ["sh", "-c", "while true; do echo -e 'HTTP/1.1 200 OK\r\n\r\nhello from backend' | nc -l -p 8080; done"]
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-svc
+  namespace: app
+spec:
+  selector:
+    tier: backend
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+# Despliegue y Servicio Datos (DB)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database-dep
+  namespace: data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      tier: database
+  template:
+    metadata:
+      labels:
+        tier: database
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14-alpine
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "secure_password"
+        ports:
+        - containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-svc
+  namespace: data
+spec:
+  selector:
+    tier: database
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
 ```
 
-### 3.2. Script de Pruebas de Seguridad
+-----
 
-El script `test-policies.ps1` automatiza la validacion usando `nc -z` y el codigo de salida de PowerShell (`$LASTEXITCODE`) para mostrar si las conexiones fueron **permitidas (Exito)** o **bloqueadas (Bloqueado)**.
+### 1.2. NetworkPolicies: Denegar por Defecto (`default-deny.yaml`)
 
-**Contenido del script `test-policies.ps1` (sin tildes ni 'ñ'):**
+Esta politica se aplica a *todos* los pods en cada Namespace, bloqueando todo Ingress y Egress antes de aplicar las reglas especificas.
+
+```yaml
+# default-deny.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: web # Se aplica tambien en 'app' y 'data'
+spec:
+  podSelector: {} 
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: app
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: data
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress: []
+```
+
+-----
+
+### 1.3. NetworkPolicies: Reglas Especificas (`network-polices.ymal`)
+
+Estas reglas permiten el flujo de trafico `web` $\rightarrow$ `app` $\rightarrow$ `data`. 
+
+```yaml
+# network-policies.yaml
+
+# ----------------- Politicas para 'web' -----------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-allow-ingress-internet
+  namespace: web
+spec:
+  podSelector:
+    matchLabels:
+      tier: frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0 # Trafico externo (Internet)
+    ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-allow-egress-to-app
+  namespace: web
+spec:
+  podSelector:
+    matchLabels:
+      tier: frontend
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: app
+      podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 8080
+  # DNS tambien se permite (puerto 53)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# ----------------- Politicas para 'app' -----------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-allow-ingress-from-web
+  namespace: app
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: web
+      podSelector:
+        matchLabels:
+          tier: frontend
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-allow-egress-to-data
+  namespace: app
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: data
+      podSelector:
+        matchLabels:
+          tier: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  # DNS tambien se permite (puerto 53)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# ----------------- Politicas para 'data' -----------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-allow-ingress-from-app
+  namespace: data
+spec:
+  podSelector:
+    matchLabels:
+      tier: database
+  policyTypes:
+  - Ingress
+  - Egress # Se incluye para aplicar la regla vacia de Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: app
+      podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress: [] # Niega EXPLÍCITAMENTE todo el trafico de salida
+```
+
+-----
+
+## 2\. Aplicacion de la Arquitectura y las Politicas
+
+Se ejecuta los siguientes comandos en la consola de PowerShell, asegurandose de estar en el mismo directorio que los archivos YAML.
+
+```powershell
+# 1. Aplicar Namespaces y deployements"
+apply -f namespaces.yaml,web-deployment.yaml,app-deployment.yaml,data-deployment.yaml
+```
+<img width="1441" height="251" alt="image" src="https://github.com/user-attachments/assets/89097fc2-9db1-46aa-93c4-752bba45d70e" />
+
+
+
+
+```powershell
+# 2. Aplicar Politicas de Denegar por Defecto
+kubectl apply -f default-deny.yaml
+```
+<img width="1103" height="79" alt="image" src="https://github.com/user-attachments/assets/2472a465-b832-478b-a7d4-eac1f55b91f5" />
+
+
+```powershell
+# 4. Aplicar Politicas Especificas de Flujo
+kubectl apply -f network-policies.yaml
+```
+<img width="1162" height="205" alt="image" src="https://github.com/user-attachments/assets/01bcc0fb-c28a-47a1-ae93-488575530f92" />
+
+-----
+
+## 3\. Script de Pruebas de Seguridad (`test-policies.ps1`)
+
+se crea el archivo `test-policies.ps1` con el siguiente contenido. Este script valida si las conexiones **permitidas** dan EXITO y si las **bloqueadas** resultan en FALLO/BLOQUEO.
 
 ```powershell
 # test-policies.ps1
@@ -137,24 +430,14 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "`n--- VERIFICACION DE POLITICAS COMPLETADA ---"
 ```
 
-### 3.3. Ejecucion del Script
+## 4\. Ejecucion del Script
 
-Ejecuta el script desde tu consola de PowerShell:
+Simplemente corre el script en PowerShell:
 
 ```powershell
 .\test-policies.ps1
 ```
+<img width="898" height="537" alt="image" src="https://github.com/user-attachments/assets/1c7d88a4-b6a5-42dc-8274-4e6cecde3242" />
 
------
+La salida indicara claramente si la seguridad por capas se implemento con EXITO o si hubo FALLOS de seguridad.
 
-## 4\. Resultados Esperados
-
-Si todas las NetworkPolicies se aplicaron correctamente, la salida de `test-policies.ps1` deberia ser la siguiente:
-
-| Prueba | Direccion de Trafico | Resultado Esperado | Explicacion de la Politica |
-| :--- | :--- | :--- | :--- |
-| **2.1** | `web` $\rightarrow$ `app` | ✅ EXITO | Flujo de aplicacion permitido. |
-| **2.2** | `app` $\rightarrow$ `data` | ✅ EXITO | Flujo de aplicacion permitido. |
-| **3.1** | `data` $\rightarrow$ `app` | 🚫 BLOQUEADO | Egress bloqueado en la DB por `egress: []`. |
-| **3.2** | `web` $\rightarrow$ `data` | 🚫 BLOQUEADO | Ingress de `data` solo acepta `app`. |
-| **3.3** | `app` $\rightarrow$ `web` | 🚫 BLOQUEADO | Ingress de `web` solo acepta trafico externo. |
