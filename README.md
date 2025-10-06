@@ -1,12 +1,12 @@
-#Seguridad por Capas con NetworkPolicies
+#Layered Security with NetworkPolicies
 
-Este documento detalla la creacion de una arquitectura de microservicios de tres capas en Kubernetes, donde la seguridad es impuesta usando **NetworkPolicies** bajo el principio de **Minimo Privilegio**.
+This document details the creation of a three-tiered microservices architecture in Kubernetes, where security is enforced using NetworkPolicies under the principle of Least Privilege.
 
-## 1\. Configuracion Inicial y Creacion de Archivos YAML
+## 1. Initial Configuration and Creation of YAML Files
 
-### 1.1. Creacion de Namespaces, Despliegues y Servicios (`deployments.yaml`)
+### 1.1. Creation of Namespaces, Deployments, and Services (`deployments.yaml`)
 
-Se crea los diferentes archivos `.yaml` con la arquitectura de la aplicacion: `web` (Frontend), `app` (Backend) y `data` (DB).
+The different `.yaml` files are created with the application architecture: `web` (frontend), `app` (backend), and `data` (database).
 
 ```yaml
 # deployments.yaml
@@ -138,9 +138,9 @@ spec:
 
 -----
 
-### 1.2. NetworkPolicies: Denegar por Defecto (`default-deny.yaml`)
+### 1.2. NetworkPolicies: Deny by Default (`default-deny.yaml`)
 
-Esta politica se aplica a *todos* los pods en cada Namespace, bloqueando todo Ingress y Egress antes de aplicar las reglas especificas.
+This policy applies to *all* pods in each Namespace, blocking all Ingress and Egress before applying the specific rules.
 
 ```yaml
 # default-deny.yaml
@@ -186,9 +186,8 @@ spec:
 
 -----
 
-### 1.3. NetworkPolicies: Reglas Especificas (`network-polices.ymal`)
-
-Estas reglas permiten el flujo de trafico `web` $\rightarrow$ `app` $\rightarrow$ `data`. 
+### 1.3. Network Policies: Specific Rules (`network-policies.ymal`)
+These rules allow the flow of `web` $\rightarrow$ `app` $\rightarrow$ `data` traffic.
 
 ```yaml
 # network-policies.yaml
@@ -330,9 +329,9 @@ spec:
 
 -----
 
-## 2\. Aplicacion de la Arquitectura y las Politicas
+## 2. Applying Architecture and Policies
 
-Se ejecuta los siguientes comandos en la consola de PowerShell, asegurandose de estar en el mismo directorio que los archivos YAML.
+Run the following commands in the PowerShell console, making sure you are in the same directory as the YAML files.
 
 ```powershell
 # 1. Aplicar Namespaces y deployements"
@@ -357,10 +356,9 @@ kubectl apply -f network-policies.yaml
 <img width="1162" height="205" alt="image" src="https://github.com/user-attachments/assets/01bcc0fb-c28a-47a1-ae93-488575530f92" />
 
 -----
+## 3. Security Test Script (`test-policies.ps1`)
 
-## 3\. Script de Pruebas de Seguridad (`test-policies.ps1`)
-
-se crea el archivo `test-policies.ps1` con el siguiente contenido. Este script valida si las conexiones **permitidas** dan EXITO y si las **bloqueadas** resultan en FALLO/BLOQUEO.
+The `test-policies.ps1` file is created with the following contents. This script validates whether **allowed** connections succeed and whether **blocked** connections fail/block.
 
 ```powershell
 # test-policies.ps1
@@ -430,14 +428,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "`n--- VERIFICACION DE POLITICAS COMPLETADA ---"
 ```
 
-## 4\. Ejecucion del Script
+## 4. Running the Script
 
-Simplemente corre el script en PowerShell:
+Simply run the script in PowerShell:
 
 ```powershell
 .\test-policies.ps1
 ```
 <img width="898" height="537" alt="image" src="https://github.com/user-attachments/assets/1c7d88a4-b6a5-42dc-8274-4e6cecde3242" />
 
-La salida indicara claramente si la seguridad por capas se implemento con EXITO o si hubo FALLOS de seguridad.
-
+The output will clearly indicate whether layered security was implemented SUCCESSFULLY or if there were security FAILURES.
